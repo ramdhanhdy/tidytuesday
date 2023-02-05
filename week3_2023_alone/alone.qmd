@@ -1,0 +1,183 @@
+---
+title: "EDA_Alone"
+format: html
+editor: visual
+---
+
+## Alone 
+
+\*dataset description
+
+## Exploratory Data Analysis
+
+First, required packasges are imported
+
+```{r}
+#|echo: false 
+library(tidyverse)
+library(alone)
+library(ggtext)
+library(ggplot2)
+library(ggthemes)
+library(showtext)
+library(patchwork)
+library(DataExplorer)
+library(ggstatsplot)
+```
+
+Let's see the glimpse of the dataset
+
+```{r}
+#| echo: false
+glimpse(survivalists)
+```
+
+Looks like there are some missing values on several columns, let's explore this further
+
+```{r}
+plot_missing(survivalists)
+```
+
+```{r}
+plot_bar(survivalists)
+```
+
+```{r}
+#data wrangling
+df <- expand_grid(
+  days_lasted = sort(unique(survivalists$days_lasted)),
+  gender = unique(survivalists$gender)
+) |>
+  left_join(
+    survivalists |>
+      count(days_lasted, gender),
+    by = c("days_lasted", "gender")
+  ) |>
+  left_join(
+    survivalists |>
+      count(gender, name = "N"),
+    by = "gender"
+  ) |>
+  group_by(gender) |>
+  mutate(
+    n = replace_na(n, 0),
+    n_lasted = N-cumsum(n),
+    p = n_lasted/N
+  )
+
+df
+```
+
+## Survival Curve
+
+```{r}
+# 🎨 fonts and palettes ---------------------------------------------------
+pal1 <- c('#1B2624', '#956e62', '#4b3425', '#2e291b', '#575642')
+
+txt <- "grey20"
+line <- "grey80"
+bg <- "white"
+      
+font_add_google("Karla", "karla")
+showtext_auto()
+ft <- "karla"
+
+
+# survival curve plot
+plot1 <- df |>
+  ggplot(aes(days_lasted, p, colour = gender, fill = gender)) +
+  geom_line() +
+  scale_colour_manual(values = c("#CC6666", "#9999CC", "#66CC99")) +
+  labs(
+    x = "Days lasted",
+    y = "Proportion remaining",
+    colour = "Gender",
+    fill = "Gender",
+    title = "Survival curves",
+    subtitle = "There is some evidence that, on average, women tend to survive longer than men"
+  ) 
+
+plot1 +
+  theme_fivethirtyeight()
+```
+
+```{r}
+survivalists_not_4 <- survivalists %>%
+  filter(!season == 4) %>%
+  mutate(win_lose = recode(result,
+                           "1"="Winner", "2"="Runner-up",
+                           "3"="The Pack", "4"="The Pack", "5"="The Pack",
+                           "6"="The Pack", "7"="The Pack", "8"="The Pack",
+                           "9"="The Pack", "10"="1st Out"))
+
+survivalists4 <- survivalists %>%
+  filter(season==4) %>%
+  mutate(win_lose = recode(result,
+                           "1"="Winner", "2"="Runner-up",
+                           "3"="The Pack", "4"="The Pack", "5"="The Pack",
+                           "6"="The Pack", "7"="1st Out"))
+
+survivalists_processed <- rbind(survivalists_not_4, survivalists4) %>%
+  mutate(evac=ifelse(medically_evacuated==TRUE, "Medically Evacuated", NA))
+```
+
+```{r}
+#normality check
+survivalists_processed %>%
+  filter(gender=="Female") %>%
+  ggplot(aes(x=days_lasted)) +
+  geom_histogram(bins=30)
+```
+
+```{r}
+library(ggpubr)
+
+caption <- "Homogeneity of variance was tested through the use of of the Levene's test. The Levene's test yielded a result of (p=.997) This indicates that our data met the statistical assumption for homogeneity of variance. The Shapiro-Wilk's test yielded a p-value p<.0001 for the sample as a whole assumption of normality has been violated. As such a nonparametric test is conducted. \n Data: Alone (shared by Dan Oehm) | Image created: @richclarkepsy | #tidytuesday"
+
+survivalists_processed %>%
+  ggplot(aes(x=gender, y=days_lasted)) +
+  geom_boxplot() +
+  geom_jitter(aes(colour = win_lose), width = .1) +
+  scale_colour_manual(values=c("#d55d22", "#7da0c1", "#999999", "#7f618a")) +
+  theme_classic()+ 
+  stat_compare_means(method = "wilcox.test", paired = FALSE) +  
+  scale_y_continuous(name = "Number of days lasted") +
+  scale_x_discrete(name = "") +
+  labs(title = "Female contestants survived significantly longer\nthan male contestants",
+       subtitle = "An analysis of **The History channel** series *Alone* (N = 94) <br>",
+       caption = str_wrap(caption)) +
+  theme(plot.subtitle = element_markdown(lineheight = 1.2),
+        plot.title = element_text(),
+        plot.caption = element_text(hjust = 0, lineheight = 1.2, size = 8),
+        legend.title = element_blank())
+```
+
+```{r}
+
+ggbetweenstats(
+  data=survivalists_processed,
+  x = gender,
+  y = days_lasted,
+  type="nonparametric"
+)
+```
+
+```{r}
+ggbetweenstats(
+  data=survivalists_processed,
+  x = gender,
+  y = days_lasted,
+  type="nonparametric",
+  bf.message=FALSE,
+  results.subtitle = FALSE,
+  centrality.point.args = list(size = 3, color = "darkred"),
+  title="Female contestants survived longer\nthan male contestants",
+  subtitle = "An analysis of **The History channel** series *Alone* (N = 94)",
+  ggtheme = theme_few(),
+  package = "RColorBrewer",
+  palette = "Accent") +
+  labs(title = "Female contestants survived significantly longer\nthan male contestants",
+       subtitle = "An analysis of **The History channel** series *Alone* (N = 94) <br>",
+       caption = str_wrap(caption)) 
+
+```
