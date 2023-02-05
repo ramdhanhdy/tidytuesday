@@ -1,8 +1,14 @@
 library(tidyverse)
 library(alone)
 library(ggtext)
+library(ggplot2)
+library(ggthemes)
 library(showtext)
 library(patchwork)
+library(ggpubr) #for statistical test comparison 
+library(stringr) # for text wrapping
+
+
 
 # 📉 survival chart -------------------------------------------------------
 
@@ -17,9 +23,27 @@ font_add_google("Karla", "karla")
 showtext_auto()
 ft <- "karla"
 
-#data wrangling
+#data processing
+survivalists_not_4 <- survivalists %>%
+  filter(!season == 4) %>%
+  mutate(win_lose = recode(result,
+                           "1"="Winner", "2"="Runner-up",
+                           "3"="The Pack", "4"="The Pack", "5"="The Pack",
+                           "6"="The Pack", "7"="The Pack", "8"="The Pack",
+                           "9"="The Pack", "10"="1st Out"))
+
+survivalists4 <- survivalists %>%
+  filter(season==4) %>%
+  mutate(win_lose = recode(result,
+                           "1"="Winner", "2"="Runner-up",
+                           "3"="The Pack", "4"="The Pack", "5"="The Pack",
+                           "6"="The Pack", "7"="1st Out"))
+
+survivalists_processed <- rbind(survivalists_not_4, survivalists4) %>%
+  mutate(evac=ifelse(medically_evacuated==TRUE, "Medically Evacuated", NA))
+
 df <- expand_grid(
-  days_lasted = 0:max(survivalists$days_lasted),
+  days_lasted = sort(unique(survivalists$days_lasted)),
   gender = unique(survivalists$gender)
 ) |>
   left_join(
@@ -39,7 +63,7 @@ df <- expand_grid(
     p = n_lasted/N
   )
 
-# make plots
+# survival curve plot
 plot1 <- df |>
   ggplot(aes(days_lasted, p, colour = gender, fill = gender)) +
   geom_line() +
@@ -51,9 +75,9 @@ plot1 <- df |>
     fill = "Gender",
     title = "Survival curves",
     subtitle = "There is some evidence that, on average, women tend to survive longer than men"
-  ) +
-  theme_void() +
+  )
 
+# boxplot
 plot2 <- survivalists |>
   ggplot(aes(gender, days_lasted, colour = gender, fill = gender)) +
   geom_boxplot(alpha = 0.25) +
@@ -67,4 +91,25 @@ plot2 <- survivalists |>
   coord_flip() +
   theme_void()
 
+#combine survival curve and boxplot
 plot1 + inset_element(plot2, left=0, right=1, bottom=-0.7, top=-0.2)
+
+
+caption <- "Homogeneity of variance was tested through the use of of the Levene's test. The Levene's test yielded a result of (p=.997) This indicates that our data met the statistical assumption for homogeneity of variance. The Shapiro-Wilk's test yielded a p-value p<.0001 for the sample as a whole assumption of normality has been violated. As such a nonparametric test is conducted. \n Data: Alone (shared by Dan Oehm) | Image created: @richclarkepsy | #tidytuesday"
+
+survivalists_processed %>%
+  ggplot(aes(x=gender, y=days_lasted)) +
+  geom_boxplot() +
+  geom_jitter(aes(colour = win_lose), width = .1) +
+  scale_colour_manual(values=c("#d55d22", "#7da0c1", "#999999", "#7f618a")) +
+  theme_classic()+ 
+  stat_compare_means(method = "wilcox.test", paired = FALSE) +  
+  scale_y_continuous(name = "Number of days lasted") +
+  scale_x_discrete(name = "") +
+  labs(title = "Female contestants survived significantly longer\nthan male contestants",
+       subtitle = "An analysis of **The History channel** series *Alone* (N = 94) <br>",
+       caption = str_wrap(caption)) +
+  theme(plot.subtitle = element_markdown(lineheight = 1.2),
+        plot.title = element_text(),
+        plot.caption = element_text(hjust = 0, lineheight = 1.2, size = 8),
+        legend.title = element_blank())
